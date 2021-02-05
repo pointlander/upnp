@@ -1,4 +1,3 @@
-//upnp functions to open ports on router
 package upnp
 
 import (
@@ -13,9 +12,12 @@ import (
 )
 
 const (
-	BroadcastRetryCount      = 3
+	// BroadcastRetryCount retry count
+	BroadcastRetryCount = 3
+	// BroadcastWaitTimeSeconds wait time
 	BroadcastWaitTimeSeconds = 3
-	ServiceType              = "urn:schemas-upnp-org:service:WANIPConnection:1"
+	// ServiceType service type
+	ServiceType = "urn:schemas-upnp-org:service:WANIPConnection:1"
 )
 
 // Envelope is a soap envelope
@@ -52,14 +54,16 @@ type Service struct {
 	//EventSubURL string `xml:"eventSubURL"`
 }
 
+// UPNP the upnp service
 type UPNP struct {
 	Gateway *Gateway
 }
 
+// Gateway the router
 type Gateway struct {
 	GatewayName   string
 	Host          string
-	DeviceDescUrl string
+	DeviceDescURL string
 	Cache         string
 	ST            string
 	ControlURL    string
@@ -186,6 +190,7 @@ func (u *UPNP) AddPortMapping(localPort, remotePort int, protocol string) error 
 	return errors.New("upnp: bad response for add port")
 }
 
+// DelPortMapping delete a port mapping
 func (u *UPNP) DelPortMapping(remotePort int, protocol string) error {
 
 	protocol = strings.ToUpper(protocol)
@@ -214,6 +219,7 @@ func (u *UPNP) DelPortMapping(remotePort int, protocol string) error {
 	return errors.New("upnp: bad response for del port mapping")
 }
 
+// ExternalIPAddress get the ip address of the router
 func (u *UPNP) ExternalIPAddress() (net.IP, error) {
 	action := `"urn:schemas-upnp-org:service:WANIPConnection:1#GetExternalIPAddress"`
 	body := `<m:GetExternalIPAddress xmlns:m="urn:schemas-upnp-org:service:WANIPConnection:1"/>`
@@ -241,12 +247,13 @@ func (u *UPNP) ExternalIPAddress() (net.IP, error) {
 	return nil, errors.New("upnp: could not get public ip from gateway")
 }
 
+// DeviceDesc get the device description
 func (u *UPNP) DeviceDesc() error {
 	header := http.Header{}
 	header.Set("Host", u.Gateway.Host)
 	header.Set("Connection", "keep-alive")
 
-	request, _ := http.NewRequest("GET", "http://"+u.Gateway.Host+u.Gateway.DeviceDescUrl, nil)
+	request, _ := http.NewRequest("GET", "http://"+u.Gateway.Host+u.Gateway.DeviceDescURL, nil)
 	request.Header = header
 
 	response, err := http.DefaultClient.Do(request)
@@ -274,6 +281,7 @@ func (u *UPNP) DeviceDesc() error {
 	return errors.New("upnp: Can't get control url for gateway")
 }
 
+// findGateway find the router
 func (u *UPNP) findGateway() error {
 
 	search := "M-SEARCH * HTTP/1.1\r\n" +
@@ -298,6 +306,9 @@ func (u *UPNP) findGateway() error {
 	// Broadcast message
 	for i := 0; i < BroadcastRetryCount; i++ {
 		remotAddr, err := net.ResolveUDPAddr("udp", "239.255.255.250:1900")
+		if err != nil {
+			return err
+		}
 		_, err = conn.WriteToUDP([]byte(search), remotAddr)
 		if err != nil {
 			return err
@@ -336,7 +347,7 @@ func (u *UPNP) findGateway() error {
 		case "LOCATION":
 			urls := strings.Split(strings.Split(nameValues[1], "//")[1], "/")
 			u.Gateway.Host = urls[0]
-			u.Gateway.DeviceDescUrl = "/" + urls[1]
+			u.Gateway.DeviceDescURL = "/" + urls[1]
 		case "SERVER":
 			u.Gateway.GatewayName = nameValues[1]
 		}
@@ -345,6 +356,7 @@ func (u *UPNP) findGateway() error {
 	return nil
 }
 
+// GetLocalAddress get the address of the local machine
 func GetLocalAddress() net.IP {
 	addrs, _ := net.InterfaceAddrs()
 	for _, addr := range addrs {
@@ -362,6 +374,7 @@ func GetLocalAddress() net.IP {
 	return nil
 }
 
+// isPrivateUnicast is this a private unicast address
 func isPrivateUnicast(ip net.IP) bool {
 	for _, v := range []string{"10.0.0.0/8", "192.168.0.0/16", "172.16.0.0/12"} {
 		_, block, _ := net.ParseCIDR(v)
