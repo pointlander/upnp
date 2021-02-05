@@ -5,6 +5,7 @@ import (
 	"encoding/xml"
 	"errors"
 	"fmt"
+	"io/ioutil"
 	"net"
 	"net/http"
 	"strings"
@@ -17,7 +18,32 @@ const (
 	ServiceType              = "urn:schemas-upnp-org:service:WANIPConnection:1"
 )
 
-// Device Description xml elements
+// Envelope is a soap envelope
+type Envelope struct {
+	XMLName xml.Name `xml:"Envelope"`
+	Body    Body     `xml:"Body"`
+}
+
+// Body is the soap body
+type Body struct {
+	XMLName                            xml.Name                           `xml:"Body"`
+	GetGenericPortMappingEntryResponse GetGenericPortMappingEntryResponse `xml:"GetGenericPortMappingEntryResponse"`
+}
+
+// GetGenericPortMappingEntryResponse is a port mapping
+type GetGenericPortMappingEntryResponse struct {
+	XMLName                   xml.Name `xml:"GetGenericPortMappingEntryResponse"`
+	NewRemoteHost             string   `xml:"NewRemoteHost"`
+	NewExternalPort           int      `xml:"NewExternalPort"`
+	NewProtocol               string   `xml:"NewProtocol"`
+	NewInternalPort           int      `xml:"NewInternalPort"`
+	NewInternalClient         string   `xml:"NewInternalClient"`
+	NewEnabled                int      `xml:"NewEnabled"`
+	NewPortMappingDescription string   `xml:"NewPortMappingDescription"`
+	NewLeaseDuration          int      `xml:"NewLeaseDuration"`
+}
+
+// Service device Description xml elements
 type Service struct {
 	ServiceType string `xml:"serviceType"`
 	//ServiceId   string `xml:"serviceId"`
@@ -66,8 +92,8 @@ func NewUPNP() (*UPNP, error) {
 func (u *UPNP) perform(action, body string) (*http.Response, error) {
 	// Add soap envelope
 	envelope := `<?xml version="1.0"?>
-<SOAP-ENV:Envelope 
-	xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/" 
+<SOAP-ENV:Envelope
+	xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/"
 	SOAP-ENV:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
  <SOAP-ENV:Body>
  ` + body + "</SOAP-ENV:Body></SOAP-ENV:Envelope>\r\n\r\n"
@@ -76,7 +102,7 @@ func (u *UPNP) perform(action, body string) (*http.Response, error) {
 	header.Set("SOAPAction", action)
 	header.Set("Content-Type", "text/xml")
 	header.Set("Connection", "Close")
-	header.Set("Content-Length", string(len(envelope)))
+	header.Set("Content-Length", fmt.Sprintf("%d", len(envelope)))
 
 	url := "http://" + u.Gateway.Host + u.Gateway.ControlURL
 	req, _ := http.NewRequest("POST", url, strings.NewReader(envelope))
@@ -91,6 +117,38 @@ func (u *UPNP) perform(action, body string) (*http.Response, error) {
 	//log.Println(string(dumpresp))
 
 	return resp, err
+}
+
+// GetPortMappings gets the port mappings
+func (u *UPNP) GetPortMappings() ([]Envelope, error) {
+	mappings, i := make([]Envelope, 0, 8), 0
+	var err error
+	for err == nil {
+		action := `"urn:schemas-upnp-org:service:WANIPConnection:1#GetGenericPortMappingEntry"`
+		body := fmt.Sprintf(`<m:DeletePortMapping xmlns:m="urn:schemas-upnp-org:service:GetGenericPortMappingEntry:1">
+	<NewPortMappingIndex>%d</NewPortMappingIndex>
+  </m:GetGenericPortMappingEntry>`, i)
+		response, err := u.perform(action, body)
+		if err != nil {
+			return nil, err
+		}
+		if response.StatusCode != 200 {
+			break
+		}
+		data, err := ioutil.ReadAll(response.Body)
+		if err != nil {
+			return nil, err
+		}
+		response.Body.Close()
+		var envelope Envelope
+		err = xml.Unmarshal(data, &envelope)
+		if err != nil {
+			return nil, err
+		}
+		mappings = append(mappings, envelope)
+		i++
+	}
+	return mappings, nil
 }
 
 // AddPortMapping to the WAN/Internet
