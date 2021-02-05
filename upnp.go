@@ -133,6 +133,7 @@ func (u *UPNP) GetPortMappings() ([]Envelope, error) {
 			return nil, err
 		}
 		if response.StatusCode != 200 {
+			response.Body.Close()
 			break
 		}
 		data, err := ioutil.ReadAll(response.Body)
